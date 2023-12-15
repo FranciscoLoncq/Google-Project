@@ -1,0 +1,517 @@
+---
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Google Data Analytics Certificate - Cyclistic Marketing Report**
+
+**1. Introduction**
+
+The following report is the final case study project for the Google Data Analytics Professional Certificate Case Study. In this case study we will be analyzing data from a bike sharing company named Cyclistic. Our analysis will be carried out following the steps of the data analysis process: ask, prepare, process, analyze, share and act.
+
+Ciclistic is a bike share program that features more than 5,800 bicycles and 600 docking stations around the Chicago area. The goal of this project is to analyze the company data and to provide our three main recommendations to the Cyclistic marketing analytics team in order to transform casual users into annual suscribers.
+
+**2. Ask**
+
+Statement of business task: Thinking of marketing strategies in order to convert the casual users into annual suscribers. Key stakeholders: Lily Moreno (Marketing Director) and Cyclistic Marketing Analytics Team
+
+**3. Prepare**
+
+The source of our data is an internal dataset provided by Cyclistic (Divvy) with one dataset per month. We will analyze the last 12 month period of available data at the time of this analysis that goes from August 2022 to July 2023. The data is organized in csv files with one file per month. The datasets provide information on each trip done by users of cyclistic. Information contained covers aspects such as trip duration, user type, bike type, docking station, among other data.
+
+All the data complies with the ROCCC method and is valid for our analysis. Our data is reliable and comes from a trusted source. It is original. It is comprehensive since it provides enough data to obtain relevant insights. Data is current as well, since we have data sets for the previous 12 months. Our data is also cited and under a license.
+
+**4. Process**
+
+**4.1 Installing and loading packages needed for our analysis**
+
+```{r eval=FALSE}
+install.packages("readr")
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("sqldf")
+install.packages("janitor")
+install.packages("lubridate")
+install.packages("skimr")
+install.packages("DBI")
+install.packages("odbc")
+install.packages("tidyverse")
+install.packages('magrittr')
+```
+
+```{r include = FALSE}
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(sqldf)
+library(janitor)
+library(lubridate)
+library(skimr)
+library(DBI)
+library(odbc)
+library(tidyverse)
+library(rmarkdown)
+library(magrittr)
+```
+
+**4.2 Loading monthly CSV datasets**
+
+```{r, message=FALSE, warning=FALSE}
+aug <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202208-divvy-tripdata.csv")
+sep <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202209-divvy-publictripdata.csv")
+oct <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202210-divvy-tripdata.csv")
+nov <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202211-divvy-tripdata.csv")
+dec <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202212-divvy-tripdata.csv")
+jan <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202301-divvy-tripdata.csv")
+feb <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202302-divvy-tripdata.csv")
+mar <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202303-divvy-tripdata.csv")
+apr <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202304-divvy-tripdata.csv")
+may <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202305-divvy-tripdata.csv")
+jun <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202306-divvy-tripdata.csv")
+jul <- read.csv("C:\\Users\\Gebruiker\\OneDrive\\Escritorio\\Data Analytics Projects\\Google Certification\\csvfiles\\202307-divvy-tripdata.csv")
+```
+
+**4.3 Overview of the data sets**
+
+We will start our analysis by doing a quick overview of each data set in order to check that they are consistent.
+
+```{r}
+head(aug,5)
+head(sep,5)
+head(oct,5)
+head(nov,5)
+head(dec,5)
+head(jan,5)
+head(feb,5)
+head(mar,5)
+head(apr,5)
+head(may,5)
+head(jun,5)
+head(jul,5)
+```
+
+**4.4 Data cleaning and transformation**
+
+Since the data is consistent we proceed to merge the tables.
+
+```{r include = FALSE}
+trips <- bind_rows(aug,sep,oct,nov,dec,jan,feb,mar,apr,may,jun,jul)
+```
+
+In addition, we proceed to do a quick analysis of the main columns in the data frame to check if we see anything that stand out.
+
+```{r}
+length(unique(trips$ride_id))
+```
+
+```{r include = FALSE}
+length(unique(trips$ride_id)) == nrow(trips)
+
+n_occur <- data.frame(table(trips$ride_id))
+
+n_distinct(trips$ride_id)
+```
+
+```{r}
+sum(duplicated(trips$ride_id))
+```
+
+The number of ride ids is not unique. Some are repeated since they are stored as scientific notation (due to the CSV format)- The unique number of ride ids is 5723489. We will drop the repeated ids in order to continue with the analysis.
+
+```{r include = FALSE}
+trips <- trips %>% distinct(ride_id, .keep_all = TRUE)
+```
+
+We continue to look into the different variables in our data set. By using the skim function we can check the number of unique rows and nulls, among other relevant information.
+
+```{r}
+skim_without_charts(trips)
+```
+
+We see that there are 4 types of ride types, one being a blank row that we will remove since it is irrelevant for our analysis, new data frame will be named trips_clean.
+
+```{r include = FALSE}
+trips %>% filter(rideable_type != "") 
+
+trips_clean <- trips %>% filter(rideable_type != "") 
+
+skim_without_charts(trips_clean)
+```
+
+Given some vectors are currently characters, we need to apply some transformations in order to use them as dates. First we will convert the end and start time of each trip into a datetime class.
+
+```{r}
+class(trips_clean$ended_at)
+```
+
+```{r include = FALSE}
+trips_clean$started_at <- as.POSIXct(trips_clean$started_at, format = "%m/%d/%Y %H:%M", tz="GMT")
+trips_clean$ended_at <- as.POSIXct(trips_clean$ended_at, format = "%m/%d/%Y %H:%M", tz="GMT")
+```
+
+We will also breakdown the start and end times into day of the week and month.
+
+```{r include = FALSE}
+trips_clean$started_at_month <- month(trips_clean$started_at, label=TRUE)
+trips_clean$started_at_day_of_week <- wday(trips_clean$started_at, label=TRUE)
+```
+
+We then calculate the trip length in seconds, minutes and hours.
+
+```{r include = FALSE}
+trips_clean$trip_length_s <- difftime(trips_clean$ended_at, trips_clean$started_at)
+trips_clean$trip_length_hrs <- as.numeric(trips_clean$trip_length_s, units="hours")
+trips_clean$trip_length_mins <- as.numeric(trips_clean$trip_length_s, units="mins")
+trips_clean$trip_start_hour <- hour(trips_clean$started_at)
+
+str(trips_clean$trip_length_mins)
+head(trips_clean)
+```
+
+Renaming variables for simpler following analysis.
+
+```{r include = FALSE}
+trips_clean <- trips_clean %>% 
+  rename(user_type=member_casual)
+```
+
+**5. Data Analysis**
+
+Now that our data is transformed and cleaned, we can go ahead and start analyzing it. Our business task is to provide insights in order to transform causal users into members, so we need to obtain further information about the behavior of both type of users.
+
+**5.1 Casual Users vs suscribers**
+
+```{r include = FALSE}
+skim(trips_clean$user_type)
+user_type_rides <- trips_clean %>% count(user_type) %>% 
+  mutate(pct = round(n*100/sum(n),2))
+```
+
+```{r}
+user_type_rides
+```
+
+The data shows that from all of the 5723488 trips, 37.9% were done by casual users and 62.1% were members.
+
+```{r include = FALSE}
+skim(trips_clean$rideable_type)
+trips_clean %>% 
+  group_by(rideable_type)%>%
+  summarize(count = length(ride_id)) %>%
+  mutate(pct = round(count*100/sum(count),2))
+```
+
+We also want to obtain information about how on average the ride length from a casual user differs from a member.
+
+```{r include = FALSE}
+user_trip_duration <- trips_clean %>% 
+  group_by(user_type) %>% 
+  summarise(mean_time = mean(trip_length_mins))
+```
+
+```{r}
+user_trip_duration
+```
+
+The mean time of the rides done by casual users differ pretty significantly compared to the rides of subscribers.
+
+**5.2 Bike Types**
+
+The column 'rideable_type' provides information about the type of bycicle used in each trip. We want to know the overall data regarding which bike users tend to use more.
+
+```{r include = FALSE}
+skim(trips_clean$rideable_type)
+trips_clean %>% 
+  group_by(rideable_type)%>%
+  summarize(count = length(ride_id)) %>%
+  mutate(pct = round(count*100/sum(count),2))
+```
+
+Also, 54.3% of all users choose to ride electric bikes, while 43.4% use classic bikes. We also have a 2.25% of trips where the bike is marked as ´docked´ we might need to investigate what this bike status represents going forward.
+
+We also want to analyze the tendency for both casual users and members to use both types of bicycles.
+
+```{r include = FALSE}
+rideable_user_percentages <- trips_clean %>%
+  group_by(user_type, rideable_type) %>%
+  summarise(count = n(),.groups = "drop") %>%
+  ungroup() %>%
+  group_by(user_type) %>%
+  mutate(percentage = (count / sum(count)) * 100)
+```
+
+It looks that members have a higher preference for classic bikes. Almost 48% of them choose this type of ride, compared to just 36% of casual users. In both cases, electric bikes are the most popular bike type.
+
+**5.3 Weekly Rides**
+
+We also want to obtain information about the behaviour of rides during the different days of the week. For doing so, we create the table "weekday" that will group the rides by user type depending on each day of the week.
+
+```{r include = FALSE}
+weekday <- trips_clean %>% 
+  group_by(user_type,started_at_day_of_week) %>% 
+  summarise(mean_time = mean(trip_length_mins),.groups = 'drop') %>% 
+  arrange(user_type,started_at_day_of_week)
+```
+
+```{r}
+weekday
+```
+
+Then we obtain the average ride time by user type per each day of the week.
+
+```{r include = FALSE}
+mean_time <- trips_clean %>% 
+  group_by(user_type) %>% 
+  summarise(mean_time = mean(trip_length_mins))
+```
+
+```{r}
+mean_time
+```
+
+Breaking down the average ride time by both types of user to see how they differ.
+
+```{r}
+casual_mean_time <- weekday %>%
+  group_by(user_type) %>%
+  filter(user_type == "casual" & mean_time == max(mean_time)| user_type == "casual" & mean_time == min(mean_time))
+```
+
+```{r}
+member_mean_time<- weekday %>%
+  group_by(user_type) %>%
+  filter(user_type == "member" & mean_time == max(mean_time)| user_type == "member" & mean_time == min(mean_time))
+```
+
+For casual users, the day with the longest average trip duration are Sundays and the day with the shortest are Thursdays. For members, these are Sundays and Wednesdays respectively.
+
+We analyze the standard deviation for the length of the mean time both types of users have in their trips.
+
+```{r}
+sd_by_user_type  <- weekday %>%
+  group_by(user_type) %>%
+  summarize (sd = sd(mean_time))
+```
+
+```{r}
+casual_variation <- casual_mean_time %>%
+  group_by(started_at_day_of_week) %>%
+  summarize(mean_time = mean(mean_time)) %>%
+  spread(started_at_day_of_week, mean_time) %>%
+  mutate(percentage_difference = scales::percent((Sun - Thu) / Sun, scale = 100))
+```
+
+```{r}
+member_variation <- member_mean_time %>%
+  group_by(started_at_day_of_week) %>%
+  summarize(mean_time = mean(mean_time)) %>%
+  spread(started_at_day_of_week, mean_time) %>%
+  mutate(percentage_difference = scales::percent((Sat - Wed) / Sat, scale = 100))
+```
+
+There is a much bigger difference in the mean times of the daily rides of casual users vs members. Casual riders peak day of usage are Sundays while members peak appears on Saturdays. However, the difference of the average usage time by day of the week is much more less significant for suscribers than for casual users.
+
+**5.4 Monthly Rides**
+
+Before going forward with our analysis, we need to reorganize the order of our month column. Currently all charts will be displayed as calendar year, but since our analysis goes from August 2022 to July 2023, we need to arrange our data in that same order for consistency.
+
+```{r include = FALSE}
+custom_order <- c("Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul")
+
+user_by_month <- trips_clean %>% 
+  group_by(user_type) %>% 
+  count(started_at_month) %>% 
+  mutate(month = factor(started_at_month, levels = custom_order)) %>% 
+  arrange(started_at_month)
+```
+
+We then organize our data into a new table, were we obtain the number of monthly rides by user type.
+
+```{r}
+user_by_month
+```
+
+**5.5 Hourly Rides**
+
+```{r include = FALSE}
+trips_by_hour <- trips_clean %>% 
+  group_by(trip_start_hour) %>% 
+  count(user_type)
+```
+
+```{r}
+trips_by_hour
+```
+
+**5.6 Most popular bike stations among casual users**
+
+```{r}
+top_10_start_stations <- trips_clean %>% 
+  filter(user_type == "casual") %>% 
+  group_by(start_station_name) %>% 
+  summarise(trip_count = n()) %>% 
+  arrange(desc(trip_count)) %>% 
+  head(11) %>% 
+  filter(start_station_name != "") %>% 
+  mutate(percentage_of_total = (trip_count / sum(trip_count)) * 100)
+
+top_10_ending_stations <- trips_clean %>% 
+  filter(user_type == "casual") %>%  
+  group_by(end_station_name) %>% 
+  summarise(trip_count = n()) %>% 
+  arrange(desc(trip_count)) %>% 
+  head(11) %>% filter(end_station_name != "") %>% 
+  mutate(percentage_of_total = (trip_count / sum(trip_count)) * 100)
+```
+
+It looks that the that the top 10 starting and ending bike stations with the most trips departed or ended coincide. The dataset contained a many ride ids where the station name is "". To avoid confusion in the analysis we decide to filter it out.
+
+**6. Data Visualization**
+
+First we want to visualize the total distribution of both types of users.
+
+**Figure 1. Casual Users vs Annual Subscribers**
+
+```{r message=FALSE, warning=FALSE}
+fig1 <- user_type_rides %>% ggplot(aes(x = "", y = user_type, fill = user_type)) + 
+  geom_bar(width = 1, stat = "identity", color = "white", show.legend = FALSE) + 
+  coord_polar("y", start = 0) + 
+  geom_text(aes(label = paste(user_type, paste(pct, "%"), sep = "\n")), 
+            position = position_stack(vjust = 0.5), color = "white") + 
+  labs(title = "Casual Users vs Annual Subscribers") + 
+  theme_void() +
+  scale_fill_brewer(palette="Accent")
+```
+
+```{r echo=FALSE}
+plot(fig1)
+```
+
+**Figure 2. Average Ride Duration**
+
+```{r message=FALSE, warning=FALSE}
+user_trip_duration <- trips_clean %>% 
+  group_by(user_type) %>% 
+  summarise(mean_time = mean(trip_length_mins))
+
+fig2 <- ggplot(user_trip_duration) + 
+  geom_col(mapping=aes(x=user_type,y=mean_time,fill=user_type), show.legend = FALSE)+
+  labs(title = "Average Trip Duration",x="User Type",y="Mean Time (in minutes)")+
+  scale_fill_brewer(palette="Accent")
+```
+
+```{r echo=FALSE}
+plot(fig2)
+```
+
+**Figure 3. Trips by Day of the Week**
+
+```{r message=FALSE, warning=FALSE}
+fig3 <- ggplot(weekday) + 
+  geom_col(mapping=aes(x=started_at_day_of_week,y=mean_time,fill=user_type), show.legend = TRUE, position ="Dodge")+ scale_fill_brewer(palette="Accent") +
+  labs(title = "Average Trip Duration per weekday",x="Weekday",y="Trip Duration (Minutes)", fill="User type") +
+  theme(legend.position="top")
+```
+
+```{r echo=FALSE}
+plot(fig3)
+```
+
+**Figure 4. Trips by Month**
+
+```{r include = FALSE}
+custom_order <- c("Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul")
+
+trips_by_hour <- trips_clean %>% 
+  group_by(trip_start_hour) %>% 
+  count(user_type)
+
+trips_by_month <- trips_clean %>%
+  group_by(started_at_month) %>%
+  mutate(started_at_month = factor(started_at_month, levels = custom_order)) %>%
+  count(user_type)
+
+trips_by_month <- trips_by_month %>%
+  rename(trips_by_month = n) %>% 
+  arrange(started_at_month)
+```
+
+```{r message=FALSE, warning=FALSE}
+fig4 <- ggplot(data = trips_by_month, aes(x = started_at_month, group = user_type, color = user_type)) +
+  geom_line(aes(y = trips_by_month, group = user_type, color = user_type)) + 
+  geom_point(aes(y = trips_by_month)) +
+  labs(
+    title = "Number of Trips By Month",
+    subtitle = "Casuals Perform Less Trips During Winter Compared to Members",
+    x = "Month",
+    y = "Number of Trips Per Month",
+    color = "User Type"
+  ) +
+  scale_color_brewer(palette = "Accent") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::number_format(scale = 1))
+```
+
+```{r echo=FALSE}
+plot(fig4)
+```
+
+**Figure 5. Bike Usage by Hour**
+
+```{r message=FALSE, warning=FALSE}
+fig5 <- ggplot(data=trips_by_hour, aes(x=trip_start_hour, y=n, group=user_type, color=user_type))+
+  geom_line(aes(y=n))+
+  geom_point(aes(y=n))+
+  scale_x_continuous(breaks=c(0:23))+
+  scale_y_continuous(labels = scales::comma)+
+  labs(title="Hourly Rides Frequency By User Type", x="Trip Starting Hour", y="Total Number of Trips", color="User Type")+
+  scale_color_brewer(palette = "Accent")+
+  theme_minimal()
+```
+
+```{r echo=FALSE}
+plot(fig5)
+```
+
+**Figure 6. Popular Stations**
+
+```{r message=FALSE, warning=FALSE}
+fig6 <- ggplot(top_10_start_stations, aes(x = reorder(start_station_name, -trip_count), y = percentage_of_total)) +
+  geom_bar(stat = "identity", aes(fill = start_station_name)) +
+  labs(title = "Top 10 Start Stations by Trip Count",
+       x = "Start Station Name",
+       y = "Percentage of Total Trips") +
+  scale_color_brewer(palette = "Accent")+
+  theme_minimal() +
+  theme(axis.text.x = element_blank())+
+  scale_y_continuous(labels = scales::percent_format(scale = 1))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10))+guides(fill = guide_legend(reverse = TRUE)) 
+```
+
+```{r echo=FALSE}
+plot(fig6)
+```
+
+**7. Act**
+
+With this analysis we identified different insights that the team can use to apply into their marketing strategy and increase the casual user to member rates.
+
+**7.1 Observations**
+
+-   In the last twelve months, 62.09% of the users were members and 37.91% casual users.
+-   Casual users rides tend to be much longer than member's. The average ride by a casual user is 28 minutes long compared to 12 minutes for members.
+-   Both types of users show that they use more rides during the weekends compared to any other weekday. However, there is a much bigger dispersion in the amounts of rides casual user take during each day compared to members behaviour.
+-   Average trip duration varies during each month. There is a clear sign that during warmer months such as July or August, both types of users tend to have longer trips on average.
+-   Trip frequency during the day varies as well. Member users show a clear peak both around 8 am and 17 pm since this are the hours with a higher chance of using the bike for commuting to work. Meanwhile, casual users peak only at 17 pm. This might be explained that some casual users decide to use the Bicycle only to come back from work sporadically.
+-   We obtain data about which bike stations are the most popular among users. We explicitly filtered by stations used by casual users in order to know in which stations can the marketing team pay special attention. The most popular station is Streeter Dr & Grand Ave where 17.8% of casual user trips departed and 23% of them arrived.
+
+**7.2 Recommendations**
+
+Our top 3 recommendations for the marketing team are the following:
+
+-   Marketing team should put their efforts in campaigns during the months of March through July. We can see a clear trend showing that the number of trips done by casual users start to increase from March on wards.
+-   Another recommendation would be to center the marketing campaigns at the peak time of usage of casual users that is 17 PM each day. In addition, from 7 PM rides increase steadily until peak hour, so we recommend marketing to try and follow along this trend.
+-   Finally, we recommend the marketing team to focus their advertising near the most popular stations which we mentioned in our analysis. Around 50% of all trips taken by casual users where in one of the following four stations: Streeter Dr & Grand Ave, DuSable Lake Shore Dr & Monroe St, Michigan Ave & Oak St and Millennium Park. This information allows the team to focus their marketing and advertising resources in specific physical locations.
